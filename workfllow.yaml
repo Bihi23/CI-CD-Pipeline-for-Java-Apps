@@ -1,0 +1,57 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+        
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'temurin'
+          java-version: 17
+          cache: 'maven'
+
+      - name: Build and Package
+        run: mvn clean package
+
+      - run: mkdir staging && cp target/*.jar staging
+
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Package
+          path: staging
+
+  deploy: 
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps: 
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Download JAR Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: Package
+
+      - name: Copy JAR to Remote Server
+        run: scp -i ~/.ssh/id_rsa *.jar ${{ secrets.VM_USERNAME }}@${{ secrets.VM_HOST }}:/path/to/remote/directory
+
+      - name: Deploy Application
+        run: |
+            ssh -i ~/.ssh/id_rsa ${{ secrets.VM_USERNAME }}@${{ secrets.VM_HOST }} 'sudo systemctl daemon-reload && sudo systemctl stop your-service-name && sudo systemctl start your-service-name'
